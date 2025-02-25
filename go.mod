@@ -5,6 +5,11 @@ go 1.23.4
 toolchain go1.23.6
 
 require (
+	github.com/joho/godotenv v1.5.1
+	github.com/prathyushnallamothu/swarmgo v1.0.9
+)
+
+require (
 	cloud.google.com/go v0.116.0 // indirect
 	cloud.google.com/go/ai v0.8.0 // indirect
 	cloud.google.com/go/auth v0.10.2 // indirect
@@ -26,7 +31,6 @@ require (
 	github.com/invopop/jsonschema v0.12.0 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/ollama/ollama v0.5.4 // indirect
-	github.com/prathyushnallamothu/swarmgo v1.0.9 // indirect
 	github.com/sashabaranov/go-openai v1.32.2 // indirect
 	github.com/tidwall/gjson v1.14.4 // indirect
 	github.com/tidwall/match v1.1.1 // indirect
