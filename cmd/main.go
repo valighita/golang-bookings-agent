@@ -22,7 +22,9 @@ const (
 	contextPrompt = "You are a helpful booking assistant for a hair salon, helping clients book appointments. " +
 		"The salon has multiple stylists, each performing different services with different duration and prices. " +
 		"You can use multiple tools. " +
-		"Clients can book appointments with one of them and they need to specify a service, a date and a time. "
+		"Clients can book appointments with one of them and they need to specify a service, a date and a time, a name and a phone number." +
+		"It's important to only answer questions related to the hair salon and the services provided, do not provide information about unrelated topics." +
+		"Ask the name and phone number as the final info if not already provided. Ask for confirmation before performing the final booking."
 )
 
 func getServices(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
@@ -139,6 +141,51 @@ func getStylistsForService(args map[string]interface{}, contextVariables map[str
 	}
 }
 
+func checkAvailability(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
+	fmt.Printf("checkAvailability called with args: %+v ; %+v\n", args, contextVariables)
+
+	// service := args["time"].(string)
+	stylist := args["stylist"].(string)
+
+	if strings.ToLower(stylist) == "alice" {
+		return swarmgo.Result{
+			Data: "true",
+		}
+	}
+
+	return swarmgo.Result{
+		Data: "false",
+	}
+}
+
+// TODO employee schedule
+
+func getAvailableSlots(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
+	fmt.Printf("getAvailableSlots called with args: %+v ; %+v\n", args, contextVariables)
+
+	// duration := args["duration"].(string)
+	// date := args["date"].(string)
+
+	return swarmgo.Result{
+		Data: []string{"10:00", "11:00", "12:00"},
+	}
+}
+
+func bookAppointment(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
+	fmt.Printf("bookAppointment called with args: %+v ; %+v\n", args, contextVariables)
+
+	// service := args["service"].(string)
+	// stylist := args["stylist"].(string)
+	// date := args["date"].(string)
+	// time := args["time"].(string)
+	// name := args["name"].(string)
+	// phone := args["phone"].(string)
+
+	return swarmgo.Result{
+		Data: "ok",
+	}
+}
+
 func main() {
 	err := godotenv.Load()
 	if err != nil {
@@ -194,6 +241,79 @@ func main() {
 			},
 			Function: getStylistsForService,
 		},
+		{
+			Name:        "checkAvailability",
+			Description: "Check if a stylist is available for a booking.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"stylist": map[string]interface{}{
+						"type":        "string",
+						"description": "The name of the stylist",
+					},
+					"time": map[string]interface{}{
+						"type":        "string",
+						"description": "The time to check",
+					},
+				},
+				"required": []interface{}{"stylist", "time"},
+			},
+			Function: checkAvailability,
+		},
+		{
+			Name:        "getAvailableSlots",
+			Description: "Get the available time slots for a stylist on a specific date.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"date": map[string]interface{}{
+						"type":        "string",
+						"description": "The date to check",
+					},
+					"duration": map[string]interface{}{
+						"type":        "string",
+						"description": "The duration of the service",
+					},
+				},
+				"required": []interface{}{"date", "duration"},
+			},
+			Function: getAvailableSlots,
+		},
+		{
+			Name:        "bookAppointment",
+			Description: "Book an appointment with a stylist for a specific service, date, and time.",
+			Parameters: map[string]interface{}{
+				"type": "object",
+				"properties": map[string]interface{}{
+					"service": map[string]interface{}{
+						"type":        "string",
+						"description": "The name of the service",
+					},
+					"stylist": map[string]interface{}{
+						"type":        "string",
+						"description": "The name of the stylist",
+					},
+					"date": map[string]interface{}{
+						"type":        "string",
+						"description": "The date of the appointment",
+					},
+					"time": map[string]interface{}{
+						"type":        "string",
+						"description": "The time of the appointment",
+					},
+					"name": map[string]interface{}{
+						"type":        "string",
+						"description": "The name of the client",
+					},
+					"phone": map[string]interface{}{
+						"type":        "string",
+						"description": "The phone number of the client",
+					},
+				},
+				"required": []interface{}{"service", "stylist", "date", "time", "name", "phone"},
+			},
+			Function: bookAppointment,
+		},
 	}
 
 	data := make([]byte, 1024)
@@ -202,7 +322,7 @@ func main() {
 	messages := []llm.Message{
 		{
 			Role:    llm.RoleSystem,
-			Content: contextPrompt + ". Current time is " + time.Now().Format("2006-01-02 15:04:05"),
+			Content: contextPrompt + ". Current time is " + time.Now().Format("2006-01-02 15:04:05, Monday"),
 		},
 	}
 
@@ -210,7 +330,7 @@ func main() {
 		idx += 1
 		var n int
 
-		if idx == 1 {
+		if idx == 0 {
 			data = []byte("what are the prices of the services performed by alice?")
 			n = len(data)
 		} else {
@@ -230,7 +350,7 @@ func main() {
 		})
 
 		ctx := context.Background()
-		response, err := client.Run(ctx, agent, messages, nil, "", false, false, 4, true)
+		response, err := client.Run(ctx, agent, messages, nil, "", false, false, 10, true)
 		if err != nil {
 			log.Fatalf("Error: %v", err)
 		}
