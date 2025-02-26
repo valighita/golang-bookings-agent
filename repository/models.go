@@ -15,6 +15,7 @@ type EmployeeRepository interface {
 	GetEmployeeByName(name string) (*Employee, error)
 	CheckAvailability(employeeId uint, serviceId uint, bookingDate string, bookingTime string) (bool, error)
 	GetServicesByEmployeeId(employeeId uint) ([]*Service, error)
+	GetEmployeesForServiceId(serviceId uint) ([]*Employee, error)
 }
 
 type Service struct {
@@ -28,14 +29,12 @@ type ServiceRepository interface {
 	GetServices() ([]*Service, error)
 	GetServiceById(id uint) (*Service, error)
 	GetServiceByName(name string) (*Service, error)
-	GetEmployeesForServiceId(serviceId uint) ([]*Employee, error)
 }
 
 type Booking struct {
 	ID              uint
 	EmployeeID      uint
 	ServiceID       uint
-	CustomerID      uint
 	BookingDateTime time.Time
 	CustomerName    string
 	CustomerPhone   string

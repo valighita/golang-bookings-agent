@@ -1,8 +1,8 @@
-BIN=main
+BIN=bookings-ai-chat
 
 all: build
 
-build: $(BIN)
+build:
 	go build -o $(BIN) cmd/main.go
 
 run: build

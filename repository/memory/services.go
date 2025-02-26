@@ -2,22 +2,20 @@ package memory_repository
 
 import (
 	"errors"
-	"slices"
+	"strings"
 	"sync"
 
 	"valighita/bookings-ai-agent/repository"
 )
 
 type servicesMemoryRepository struct {
-	mu                 sync.RWMutex
-	services           map[uint]*repository.Service
-	employeeRepository repository.EmployeeRepository
+	mu       sync.RWMutex
+	services map[uint]*repository.Service
 }
 
-func NewServicesMemoryRepository(employeeRepository repository.EmployeeRepository, data map[uint]*repository.Service) repository.ServiceRepository {
+func NewServicesMemoryRepository(data map[uint]*repository.Service) repository.ServiceRepository {
 	return &servicesMemoryRepository{
-		services:           data,
-		employeeRepository: employeeRepository,
+		services: data,
 	}
 }
 
@@ -51,29 +49,10 @@ func (r *servicesMemoryRepository) GetServiceByName(name string) (*repository.Se
 	defer r.mu.RUnlock()
 
 	for _, service := range r.services {
-		if service.Name == name {
+		if strings.ToLower(service.Name) == strings.ToLower(name) {
 			return service, nil
 		}
 	}
 
 	return nil, errors.New("service not found")
-}
-
-func (r *servicesMemoryRepository) GetEmployeesForServiceId(serviceId uint) ([]*repository.Employee, error) {
-	r.mu.RLock()
-	defer r.mu.RUnlock()
-	employees, err := r.employeeRepository.GetEmployees()
-	if err != nil {
-		return nil, err
-	}
-
-	var employeesForService []*repository.Employee
-
-	for _, employee := range employees {
-		if slices.Contains(employee.ServicesIds, serviceId) {
-			employeesForService = append(employeesForService, employee)
-		}
-	}
-
-	return employees, nil
 }

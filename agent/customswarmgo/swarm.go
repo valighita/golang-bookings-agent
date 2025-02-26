@@ -1,4 +1,4 @@
-package customswarm
+package customswarmgo
 
 import (
 	"context"

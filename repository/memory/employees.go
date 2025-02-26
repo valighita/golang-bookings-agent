@@ -2,6 +2,8 @@ package memory_repository
 
 import (
 	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 	"valighita/bookings-ai-agent/repository"
@@ -51,7 +53,7 @@ func (r *employeeMemoryRepository) GetEmployeeByName(name string) (*repository.E
 	defer r.mu.RUnlock()
 
 	for _, employee := range r.employees {
-		if employee.Name == name {
+		if strings.ToLower(employee.Name) == strings.ToLower(name) {
 			return employee, nil
 		}
 	}
@@ -74,7 +76,7 @@ func (r *employeeMemoryRepository) CheckAvailability(employeeId uint, serviceId 
 		return false, err
 	}
 
-	checkTime, err := time.Parse("2006-01-02 15:04:05", bookingDate+" "+bookingTime)
+	checkTime, err := time.Parse("2006-01-02 15:04", bookingDate+" "+bookingTime)
 	if err != nil {
 		return false, err
 	}
@@ -113,4 +115,23 @@ func (r *employeeMemoryRepository) GetServicesByEmployeeId(employeeId uint) ([]*
 	}
 
 	return employeeServices, nil
+}
+
+func (r *employeeMemoryRepository) GetEmployeesForServiceId(serviceId uint) ([]*repository.Employee, error) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	employees, err := r.GetEmployees()
+	if err != nil {
+		return nil, err
+	}
+
+	var employeesForService []*repository.Employee
+
+	for _, employee := range employees {
+		if slices.Contains(employee.ServicesIds, serviceId) {
+			employeesForService = append(employeesForService, employee)
+		}
+	}
+
+	return employees, nil
 }
