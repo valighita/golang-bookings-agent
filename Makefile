@@ -5,7 +5,7 @@ all: build
 build: $(BIN)
 	go build -o $(BIN) cmd/main.go
 
-run:
+run: build
 	go run cmd/main.go
 
 clean:
