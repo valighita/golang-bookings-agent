@@ -81,6 +81,8 @@ func GetAgentTools(bookingsRepository repository.BookingRepository, servicesRepo
 					return makeResult(nil, "employee not found", err)
 				}
 
+				// TODO return employee service names instead of IDs
+
 				services, err := employeeRepository.GetServicesByEmployeeId(employee.ID)
 				return makeResult(services, "Failed to get services for employee", err)
 			},
@@ -157,6 +159,8 @@ func GetAgentTools(bookingsRepository repository.BookingRepository, servicesRepo
 					return makeResult(nil, "service not found", err)
 				}
 
+				// TODO make sure the employee offers the service
+
 				date, ok := args["date"].(string)
 				if !ok {
 					return makeResult(nil, "invalid date argument", fmt.Errorf("date is not a string"))
@@ -224,6 +228,8 @@ func GetAgentTools(bookingsRepository repository.BookingRepository, servicesRepo
 				if err != nil || service == nil {
 					return makeResult(nil, "service not found", err)
 				}
+
+				// TODO make sure the employee offers the service
 
 				date, ok := args["date"].(string)
 				if !ok {

@@ -85,7 +85,7 @@ func RunHttpServer(agentFactory agent.AgentFactory) {
 	})
 
 	log.Printf("Starting server on port %s\n", port)
-	err := http.ListenAndServe(":"+port, r)
+	err := http.ListenAndServe("127.0.0.1:"+port, r)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

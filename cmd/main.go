@@ -18,36 +18,44 @@ func main() {
 	}
 
 	bookingsRepository := memory_repository.NewBookingsMemoryRepository()
+
+	// services for a dental clinic
 	servicesRepository := memory_repository.NewServicesMemoryRepository(map[uint]*repository.Service{
 		1: {
 			ID:       1,
-			Name:     "Men's Haircut",
+			Name:     "Dental Cleaning",
 			Duration: 30,
-			Price:    50,
+			Price:    100,
 		},
 		2: {
 			ID:       2,
-			Name:     "Hair coloring",
+			Name:     "Dental Filling",
 			Duration: 60,
-			Price:    100,
+			Price:    200,
 		},
 		3: {
 			ID:       3,
-			Name:     "Hair styling",
-			Duration: 45,
-			Price:    75,
+			Name:     "Dental Crown",
+			Duration: 90,
+			Price:    300,
 		},
 		4: {
 			ID:       4,
-			Name:     "Men's beard trimming",
-			Duration: 15,
-			Price:    30,
+			Name:     "Dental Implant",
+			Duration: 120,
+			Price:    400,
 		},
 		5: {
 			ID:       5,
-			Name:     "Women's Haircut",
+			Name:     "Dental Extraction",
 			Duration: 45,
-			Price:    70,
+			Price:    150,
+		},
+		6: {
+			ID:       6,
+			Name:     "Dental X-Ray",
+			Duration: 15,
+			Price:    50,
 		},
 	})
 	employeeRepository := memory_repository.NewEmployeeMemoryRepository(bookingsRepository, servicesRepository, map[uint]*repository.Employee{
@@ -70,6 +78,11 @@ func main() {
 			ID:          4,
 			Name:        "David",
 			ServicesIds: []uint{1, 4, 5},
+		},
+		5: {
+			ID:          5,
+			Name:        "George",
+			ServicesIds: []uint{5, 6},
 		},
 	})
 
