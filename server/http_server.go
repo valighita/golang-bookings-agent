@@ -58,9 +58,16 @@ func handleWebSocket(agentFactory agent.AgentFactory) http.HandlerFunc {
 	}
 }
 
-func processMessage(msg string) string {
-	// This is a dummy function that just echoes the message
-	return msg
+func basicAuth(next http.Handler, username, password string) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		user, pass, ok := r.BasicAuth()
+		if !ok || user != username || pass != password {
+			w.Header().Set("WWW-Authenticate", `Basic realm="restricted"`)
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func RunHttpServer(agentFactory agent.AgentFactory) {
@@ -69,9 +76,19 @@ func RunHttpServer(agentFactory agent.AgentFactory) {
 		port = "8080"
 	}
 
+	username := os.Getenv("HTTP_SERVER_USERNAME")
+	password := os.Getenv("HTTP_SERVER_PASSWORD")
+	withAuth := username != "" && password != ""
+
 	r := chi.NewRouter()
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
+
+	if withAuth {
+		r.Use(func(next http.Handler) http.Handler {
+			return basicAuth(next, username, password)
+		})
+	}
 
 	// Define WebSocket route
 	r.Get("/ws", handleWebSocket(agentFactory))
@@ -85,7 +102,7 @@ func RunHttpServer(agentFactory agent.AgentFactory) {
 	})
 
 	log.Printf("Starting server on port %s\n", port)
-	err := http.ListenAndServe("127.0.0.1:"+port, r)
+	err := http.ListenAndServe(":"+port, r)
 	if err != nil {
 		log.Fatalf("Error starting server: %v", err)
 	}

@@ -11,6 +11,12 @@ build-amd64:
 run: build
 	go run cmd/main.go
 
+build-docker:
+	docker build -t $(BIN) .
+
+run-docker: build-docker
+	docker run -p 5001:8080 $(BIN)
+
 clean:
 	rm -f $(BIN)
 
