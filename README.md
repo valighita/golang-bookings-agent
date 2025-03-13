@@ -9,6 +9,10 @@ The application can be executed as an HTTP server, which serves a single-page fr
 The application currently stores the data only in memory, so the appointments are not persistent accross restarts.
 It can be easily extended to store the data in a database, or even use a separate backend API.
 
+## Demo Screenshoot
+
+![Demo](demo.jpg)
+
 ## Running the Project
 
 ### Setup env vars
@@ -46,7 +50,8 @@ make run-cli
 
 You can interact with the appointment agent directly in the terminal.
 
-## Employees and Services
+## Data Sources
 
-Employees and services available for the appointments are defined in `main.go`.
-You can modify this file for custom data.
+Employees and services available for the appointments are defined in `main.go` and stored in memory using the in-memory representation of the data repository interfaces.
+
+The interfaces in `repository/models.go` can easily be implemented for different data sources, such as databases and REST APIs.
