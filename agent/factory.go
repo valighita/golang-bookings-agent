@@ -93,7 +93,7 @@ func (f *openAIAgentFactory) CreateAgent() (Agent, error) {
 
 	agent := agents.NewConversationalAgent(f.llm,
 		f.agentTools,
-		agents.WithPromptPrefix(contextPrompt+". Current time is "+time.Now().Format("2006-01-02 15:04:05, Monday")),
+		agents.WithPromptPrefix(contextPrompt+"\n\nCurrent time is "+time.Now().Format("2006-01-02 15:04:05, Monday")),
 		agents.WithMemory(memory),
 	)
 
