@@ -1,6 +1,7 @@
 package memory_repository
 
 import (
+	"errors"
 	"sync"
 	"time"
 
@@ -52,6 +53,10 @@ func (r *bookingsMemoryRepository) SaveBooking(booking *repository.Booking) erro
 	if booking.ID == 0 {
 		booking.ID = r.nextID
 		r.nextID++
+	}
+
+	if booking.BookingDateTime.Before(time.Now()) {
+		return errors.New("booking time is in the past")
 	}
 
 	date := booking.BookingDateTime.Format("2006-01-02")

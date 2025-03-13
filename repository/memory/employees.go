@@ -80,6 +80,10 @@ func (r *employeeMemoryRepository) CheckAvailability(employeeId uint, serviceId 
 	if err != nil {
 		return false, err
 	}
+	if checkTime.Before(time.Now()) {
+		return false, nil // The time is in the past
+	}
+
 	checkEndTime := checkTime.Add(time.Duration(service.Duration) * time.Minute)
 
 	for _, booking := range dayBookings {
@@ -133,5 +137,5 @@ func (r *employeeMemoryRepository) GetEmployeesForServiceId(serviceId uint) ([]*
 		}
 	}
 
-	return employees, nil
+	return employeesForService, nil
 }

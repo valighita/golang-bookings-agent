@@ -2,28 +2,29 @@ package agent
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
 	"strconv"
 	"time"
 
-	customswarmgo "valighita/bookings-ai-agent/agent/customswarmgo"
-
-	"github.com/prathyushnallamothu/swarmgo"
-	"github.com/prathyushnallamothu/swarmgo/llm"
+	"github.com/tmc/langchaingo/agents"
+	"github.com/tmc/langchaingo/chains"
+	"github.com/tmc/langchaingo/llms/openai"
+	"github.com/tmc/langchaingo/memory"
+	langchaintools "github.com/tmc/langchaingo/tools"
 )
 
 const (
 	defaultLlmModel = "gpt-4o-mini"
-	defaultMaxTurns = 5
+	defaultMaxTurns = 10
 	contextPrompt   = "You are a helpful booking assistant for a dental clinic, helping clients book appointments. " +
 		"The clinic has multiple employees, each performing different services with different duration and prices." +
 		"You can use multiple tools.  Always use service and employee names, never ids." +
 		"Bookings can be made at multiple of 15 minutes, never anything else." +
 		"Clients can book appointments with one of them and they need to specify a service, a date and a time, a name and a phone number." +
 		"It's important to only answer relevant questions about the services provided, do not provide information about unrelated topics." +
-		"Ask the name and phone number as the final info if not already provided. Ask for confirmation before performing the final booking."
+		"Ask the name and phone number as the final info if not already provided. Ask for confirmation before performing the final booking.\n\n" +
+		"{{.tool_descriptions}}"
 )
 
 type AgentFactory interface {
@@ -41,29 +42,29 @@ type agentConfig struct {
 }
 
 type openAIAgentFactory struct {
-	client      *customswarmgo.Swarm
-	agentTools  []swarmgo.AgentFunction
+	llm         *openai.LLM
+	agentTools  []langchaintools.Tool
 	agentConfig *agentConfig
 }
 
 type openAIAgent struct {
-	config   *agentConfig
-	client   *customswarmgo.Swarm
-	agent    *swarmgo.Agent
-	messages []llm.Message
+	executor *agents.Executor
 }
 
-func NewOpenaiAgentFactory(agentTools []swarmgo.AgentFunction, debugMode bool) AgentFactory {
+func NewOpenaiAgentFactory(agentTools []langchaintools.Tool, debugMode bool) AgentFactory {
 	openAIKey := os.Getenv("OPENAI_API_KEY")
 	if openAIKey == "" {
 		log.Fatalf("OPENAI_API_KEY is required")
 	}
 
-	client := customswarmgo.NewSwarm(openAIKey, llm.OpenAI)
-
 	llmModel := os.Getenv("LLM_MODEL")
 	if llmModel == "" {
 		llmModel = defaultLlmModel
+	}
+
+	llm, err := openai.New(openai.WithModel(llmModel))
+	if err != nil {
+		log.Fatalf("Error creating OpenAI LLM: %v", err)
 	}
 
 	maxTurnsStr := os.Getenv("MAX_AGENT_TURNS")
@@ -77,7 +78,7 @@ func NewOpenaiAgentFactory(agentTools []swarmgo.AgentFunction, debugMode bool) A
 	}
 
 	return &openAIAgentFactory{
-		client:     client,
+		llm:        llm,
 		agentTools: agentTools,
 		agentConfig: &agentConfig{
 			llmModel:  llmModel,
@@ -88,39 +89,24 @@ func NewOpenaiAgentFactory(agentTools []swarmgo.AgentFunction, debugMode bool) A
 }
 
 func (f *openAIAgentFactory) CreateAgent() (Agent, error) {
-	agent := swarmgo.NewAgent("Booking Agent", f.agentConfig.llmModel, llm.OpenAI)
-	agent.Functions = f.agentTools
+	memory := memory.NewConversationBuffer()
+
+	agent := agents.NewConversationalAgent(f.llm,
+		f.agentTools,
+		agents.WithPromptPrefix(contextPrompt+". Current time is "+time.Now().Format("2006-01-02 15:04:05, Monday")),
+		agents.WithMemory(memory),
+	)
+
+	executor := agents.NewExecutor(agent,
+		agents.WithMaxIterations(f.agentConfig.maxTurns),
+		agents.WithMemory(memory),
+	)
+
 	return &openAIAgent{
-		client: f.client,
-		agent:  agent,
-		messages: []llm.Message{
-			{
-				Role:    llm.RoleSystem,
-				Content: contextPrompt + ". Current time is " + time.Now().Format("2006-01-02 15:04:05, Monday"),
-			},
-		},
-		config: f.agentConfig,
+		executor: executor,
 	}, nil
 }
 
-func (a *openAIAgent) GetCompletion(message string) (string, error) {
-	a.messages = append(a.messages, llm.Message{
-		Role:    llm.RoleUser,
-		Content: message,
-	})
-
-	ctx := context.Background()
-	response, err := a.client.Run(ctx, a.agent, a.messages, nil, "", false, a.config.debugMode, 10, true)
-	if err != nil {
-		return "", err
-	}
-
-	if len(response.Messages) == 0 {
-		return "", fmt.Errorf("Can't process request.")
-	}
-
-	msg := response.Messages[len(response.Messages)-1]
-	a.messages = append(a.messages, msg)
-
-	return msg.Content, nil
+func (a *openAIAgent) GetCompletion(prompt string) (string, error) {
+	return chains.Run(context.Background(), a.executor, prompt)
 }

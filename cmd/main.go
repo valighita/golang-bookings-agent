@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"valighita/bookings-ai-agent/agent"
@@ -90,5 +91,34 @@ func main() {
 	agentTools := agent.GetAgentTools(bookingsRepository, servicesRepository, employeeRepository, debugMode)
 	agentFactory := agent.NewOpenaiAgentFactory(agentTools, debugMode)
 
-	server.RunHttpServer(agentFactory)
+	fmt.Printf("%+v\n", os.Args)
+	if len(os.Args) > 1 && os.Args[1] == "cli" {
+		runCli(agentFactory)
+	} else {
+		server.RunHttpServer(agentFactory)
+	}
+}
+
+func runCli(agentFactory agent.AgentFactory) {
+	agent, err := agentFactory.CreateAgent()
+	if err != nil {
+		log.Fatalf("Error creating agent: %w", err)
+	}
+
+	for {
+		fmt.Printf("Enter your message: ")
+		var buffer = make([]byte, 1024)
+
+		n, err := os.Stdin.Read(buffer)
+		if err != nil {
+			log.Fatalf("Error reading input: %w", err)
+		}
+
+		response, err := agent.GetCompletion(string(buffer[:n]))
+		if err != nil {
+			log.Fatalf("Error getting completion: %w", err)
+		}
+
+		fmt.Printf("Response: %s\n", response)
+	}
 }

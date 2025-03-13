@@ -1,276 +1,357 @@
 package agent
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"time"
 	"valighita/bookings-ai-agent/repository"
 
-	"github.com/prathyushnallamothu/swarmgo"
+	langchaintools "github.com/tmc/langchaingo/tools"
 )
 
-func makeResult(data interface{}, errorMessage string, err error) swarmgo.Result {
+func makeResult(data interface{}, errorMessage string, err error) string {
 	if err != nil {
-		log.Printf("%s: %w\n", errorMessage, err)
-		return swarmgo.Result{
-			Data: fmt.Sprintf("Error: %s", errorMessage),
-		}
+		log.Printf("%s: %v\n", errorMessage, err)
+		return fmt.Sprintf("Error: %s", errorMessage)
 	}
 
 	result, err := json.Marshal(data)
 	if err != nil {
 		log.Println("Failed to marshal data: ", err)
-		return swarmgo.Result{
-			Data: fmt.Sprintf("Error: %s", errorMessage),
-		}
+		return fmt.Sprintf("Error: %s", errorMessage)
 	}
 
-	return swarmgo.Result{
-		Data: string(result),
-	}
+	return string(result)
 }
 
-func GetAgentTools(bookingsRepository repository.BookingRepository, servicesRepository repository.ServiceRepository, employeeRepository repository.EmployeeRepository, debug bool) []swarmgo.AgentFunction {
-	debugPrintf := func(format string, args ...interface{}) {
+type getServicesTool struct {
+	servicesRepository repository.ServiceRepository
+	logFunc            func(format string, v ...interface{})
+}
+
+func (t *getServicesTool) Name() string {
+	return "getServices"
+}
+
+func (t *getServicesTool) Description() string {
+	return "Get the list of services and their details (duration and price) offered by business."
+}
+
+func (t *getServicesTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("getServices called with ctx=%v ; input=%v\n", ctx, input)
+	services, err := t.servicesRepository.GetServices()
+	return makeResult(services, "Failed to get services", err), nil
+}
+
+type getEmployeesTool struct {
+	employeesRepository repository.EmployeeRepository
+	logFunc             func(format string, v ...interface{})
+}
+
+func (t *getEmployeesTool) Name() string {
+	return "getEmployees"
+}
+
+func (t *getEmployeesTool) Description() string {
+	return "Get the list of employees and the services they offer."
+}
+
+func (t *getEmployeesTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("getEmployees called with ctx=%v ; input=%v\n", ctx, input)
+	employees, err := t.employeesRepository.GetEmployees()
+	return makeResult(employees, "Failed to get services", err), nil
+}
+
+type getServicesForEmployeeTool struct {
+	employeesRepository repository.EmployeeRepository
+	logFunc             func(format string, v ...interface{})
+}
+
+func (t *getServicesForEmployeeTool) Name() string {
+	return "getServicesForEmployee"
+}
+
+func (t *getServicesForEmployeeTool) Description() string {
+	return "Get the list of services offered by a specific employee." +
+		"Input is a JSON object with the following fields: employee."
+}
+
+func (t *getServicesForEmployeeTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("getServicesForEmployee called with ctx=%v ; input=%v\n", ctx, input)
+
+	var inputMap map[string]string
+	err := json.Unmarshal([]byte(input), &inputMap)
+	if err != nil {
+		return makeResult(nil, "invalid input", err), nil
+	}
+	employeeArg, ok := inputMap["employee"]
+
+	if !ok || employeeArg == "" {
+		return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string")), nil
+	}
+	employee, err := t.employeesRepository.GetEmployeeByName(employeeArg)
+	if err != nil || employee == nil {
+		return makeResult(nil, "employee not found", err), nil
+	}
+
+	// TODO return employee service names instead of IDs
+
+	services, err := t.employeesRepository.GetServicesByEmployeeId(employee.ID)
+	return makeResult(services, "Failed to get services for employee", err), nil
+}
+
+type getEmployeesForServiceTool struct {
+	employeesRepository repository.EmployeeRepository
+	servicesRepository  repository.ServiceRepository
+	logFunc             func(format string, v ...interface{})
+}
+
+func (t *getEmployeesForServiceTool) Name() string {
+	return "getEmployeesForService"
+}
+
+func (t *getEmployeesForServiceTool) Description() string {
+	return "Get the list of employees who perform a specific service." +
+		"Input is a JSON object with the following fields: service."
+}
+
+func (t *getEmployeesForServiceTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("getEmployeesForService called with ctx=%v ; input=%v\n", ctx, input)
+
+	var inputMap map[string]string
+	err := json.Unmarshal([]byte(input), &inputMap)
+	if err != nil {
+		return makeResult(nil, "invalid input", err), nil
+	}
+	serviceArg, ok := inputMap["service"]
+
+	if !ok || serviceArg == "" {
+		return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string")), nil
+	}
+	service, err := t.servicesRepository.GetServiceByName(serviceArg)
+	if err != nil || service == nil {
+		return makeResult(nil, "service not found", err), nil
+	}
+
+	employees, err := t.employeesRepository.GetEmployeesForServiceId(service.ID)
+	t.logFunc("returning employees for service id %d: %v\n", service.ID, employees)
+	return makeResult(employees, "Failed to get employees for service", err), nil
+}
+
+//		Function: func(args map[string]interface{}, contextVariables map[string]interface{}) langchaingo.Result {
+//			debugPrintf("checkAvailability called with args=%v ; contextVars=%v\n", args, contextVariables)
+//
+//		},
+//	},
+type checkAvailabilityTool struct {
+	employeesRepository repository.EmployeeRepository
+	servicesRepository  repository.ServiceRepository
+	logFunc             func(format string, v ...interface{})
+}
+
+func (t *checkAvailabilityTool) Name() string {
+	return "checkAvailability"
+}
+
+func (t *checkAvailabilityTool) Description() string {
+	return "Check if an employee is available for a booking at a given time and date." +
+		"Input is a JSON object with the following fields: employee, service, date, time." +
+		"All fields are required and the date and time should be in the format YYYY-MM-DD and HH:MM"
+}
+
+func (t *checkAvailabilityTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("checkAvailability called with ctx=%v ; input=%v\n", ctx, input)
+
+	var inputMap map[string]string
+	err := json.Unmarshal([]byte(input), &inputMap)
+	if err != nil {
+		return makeResult(nil, "invalid input", err), nil
+	}
+
+	employeeArg, ok := inputMap["employee"]
+	if !ok || employeeArg == "" {
+		return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string")), nil
+	}
+	serviceArg, ok := inputMap["service"]
+	if !ok || serviceArg == "" {
+		return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string")), nil
+	}
+	employee, err := t.employeesRepository.GetEmployeeByName(employeeArg)
+	if err != nil || employee == nil {
+		return makeResult(nil, "employee not found", err), nil
+	}
+	service, err := t.servicesRepository.GetServiceByName(serviceArg)
+	if err != nil || service == nil {
+		return makeResult(nil, "service not found", err), nil
+	}
+
+	employeeServices, err := t.employeesRepository.GetServicesByEmployeeId(employee.ID)
+	if err != nil || service == nil {
+		return makeResult(nil, "could not get services for employee", err), nil
+	}
+	found := false
+	for _, s := range employeeServices {
+		if s.ID == service.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return makeResult(nil, "employee does not offer the service", fmt.Errorf("employee does not offer the service")), nil
+	}
+
+	date, ok := inputMap["date"]
+	if !ok {
+		return makeResult(nil, "invalid date argument", fmt.Errorf("date is not a string")), nil
+	}
+	time, ok := inputMap["time"]
+	if !ok {
+		return makeResult(nil, "invalid time argument", fmt.Errorf("time is not a string")), nil
+	}
+
+	t.logFunc("checking availability for employeeId: %d serviceId: %d date: %s time: %s",
+		employee.ID, service.ID, date, time)
+	available, err := t.employeesRepository.CheckAvailability(employee.ID, service.ID, date, time)
+	return makeResult(available, "Failed to check availability", err), nil
+}
+
+type bookAppointmentTool struct {
+	employeesRepository repository.EmployeeRepository
+	servicesRepository  repository.ServiceRepository
+	bookingsRepository  repository.BookingRepository
+	logFunc             func(format string, v ...interface{})
+}
+
+func (t *bookAppointmentTool) Name() string {
+	return "bookAppointment"
+}
+
+func (t *bookAppointmentTool) Description() string {
+	return "Book an appointment with an employee for a specific service, date, and time." +
+		"Input is a JSON object with the following fields: employee, service, date, time, name, phone." +
+		"All fields are required and the date and time should be in the format YYYY-MM-DD and HH:MM"
+}
+
+func (t *bookAppointmentTool) Call(ctx context.Context, input string) (string, error) {
+	t.logFunc("bookAppointment called with args: %v ; %v\n", ctx, input)
+
+	var inputMap map[string]string
+	err := json.Unmarshal([]byte(input), &inputMap)
+	if err != nil {
+		return makeResult(nil, "invalid input", err), nil
+	}
+
+	employeeArg, ok := inputMap["employee"]
+	if !ok || employeeArg == "" {
+		return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string")), nil
+	}
+	serviceArg, ok := inputMap["service"]
+	if !ok || serviceArg == "" {
+		return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string")), nil
+	}
+	employee, err := t.employeesRepository.GetEmployeeByName(employeeArg)
+	if err != nil || employee == nil {
+		return makeResult(nil, "service not found", err), nil
+	}
+	service, err := t.servicesRepository.GetServiceByName(serviceArg)
+	if err != nil || service == nil {
+		return makeResult(nil, "service not found", err), nil
+	}
+
+	employeeServices, err := t.employeesRepository.GetServicesByEmployeeId(employee.ID)
+	if err != nil || service == nil {
+		return makeResult(nil, "could not get services for employee", err), nil
+	}
+	found := false
+	for _, s := range employeeServices {
+		if s.ID == service.ID {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return makeResult(nil, "employee does not offer the service", fmt.Errorf("employee does not offer the service")), nil
+	}
+
+	date, ok := inputMap["date"]
+	if !ok {
+		return makeResult(nil, "invalid date argument", fmt.Errorf("date is not a string")), nil
+	}
+	bookingTime, ok := inputMap["time"]
+	if !ok {
+		return makeResult(nil, "invalid time argument", fmt.Errorf("time is not a string")), nil
+	}
+	name, ok := inputMap["name"]
+	if !ok || name == "" {
+		return makeResult(nil, "invalid name argument", fmt.Errorf("name is not a string")), nil
+	}
+	phone, ok := inputMap["phone"]
+	if !ok || phone == "" {
+		return makeResult(nil, "invalid phone argument", fmt.Errorf("phone is not a string")), nil
+	}
+
+	if ok, err := t.employeesRepository.CheckAvailability(employee.ID, service.ID, date, bookingTime); !ok || err != nil {
+		return makeResult(nil, "employee is not available", err), nil
+	}
+
+	dateTime, err := time.Parse("2006-01-02 15:04", date+" "+bookingTime)
+	if err != nil {
+		return makeResult(nil, "invalid date and time", err), nil
+	}
+
+	t.logFunc("booking appointment for employeeId: %d serviceId: %d date: %s time: %s name: %s phone: %s",
+		employee.ID, service.ID, date, bookingTime, name, phone)
+
+	booking := repository.Booking{
+		ServiceID:       service.ID,
+		EmployeeID:      employee.ID,
+		BookingDateTime: dateTime,
+		CustomerName:    name,
+		CustomerPhone:   phone,
+	}
+
+	err = t.bookingsRepository.SaveBooking(&booking)
+	return makeResult("ok", "Failed to save booking", err), nil
+}
+
+func GetAgentTools(bookingsRepository repository.BookingRepository, servicesRepository repository.ServiceRepository, employeeRepository repository.EmployeeRepository, debug bool) []langchaintools.Tool {
+
+	logFunc := func(format string, v ...interface{}) {
 		if debug {
-			log.Printf(format, args...)
+			log.Printf(format, v...)
 		}
 	}
 
-	return []swarmgo.AgentFunction{
-		{
-			Name:        "getServices",
-			Description: "Get the list of services and their details (duration and price) offered by business.",
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("getServices called with args=%v ; contextVars=%v\n", args, contextVariables)
-				services, err := servicesRepository.GetServices()
-				return makeResult(services, "Failed to get services", err)
-			},
+	return []langchaintools.Tool{
+		&getServicesTool{
+			servicesRepository: servicesRepository,
+			logFunc:            logFunc,
 		},
-		{
-			Name:        "getEmployees",
-			Description: "Get the list of employees and the services they offer.",
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("getEmployees called with args=%v ; contextVars=%v\n", args, contextVariables)
-				employees, err := employeeRepository.GetEmployees()
-				return makeResult(employees, "Failed to get employees", err)
-			},
+		&getEmployeesTool{
+			employeesRepository: employeeRepository,
+			logFunc:             logFunc,
 		},
-		{
-			Name:        "getServicesForEmployee",
-			Description: "Get the list of services offered by a specific employee.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"employee": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the employee",
-					},
-				},
-				"required": []interface{}{"employee"},
-			},
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("getServicesForEmployee called with args=%v ; contextVars=%v\n", args, contextVariables)
-				employeeArg, ok := args["employee"].(string)
-				if !ok || employeeArg == "" {
-					return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string"))
-				}
-				employee, err := employeeRepository.GetEmployeeByName(employeeArg)
-				if err != nil || employee == nil {
-					return makeResult(nil, "employee not found", err)
-				}
-
-				// TODO return employee service names instead of IDs
-
-				services, err := employeeRepository.GetServicesByEmployeeId(employee.ID)
-				return makeResult(services, "Failed to get services for employee", err)
-			},
+		&getServicesForEmployeeTool{
+			employeesRepository: employeeRepository,
+			logFunc:             logFunc,
 		},
-		{
-			Name:        "getEmployeesForService",
-			Description: "Get the list of employees who perform a specific service.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"service": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the service",
-					},
-				},
-				"required": []interface{}{"service"},
-			},
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("getEmployeesForService called with args=%v ; contextVars=%v\n", args, contextVariables)
-				service, ok := args["service"].(string)
-				if !ok || service == "" {
-					return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string"))
-				}
-				serv, err := servicesRepository.GetServiceByName(service)
-				if err != nil || serv == nil {
-					return makeResult(nil, "service not found", err)
-				}
-
-				employees, err := employeeRepository.GetEmployeesForServiceId(serv.ID)
-				return makeResult(employees, "Failed to get employees for service", err)
-			},
+		&getEmployeesForServiceTool{
+			employeesRepository: employeeRepository,
+			servicesRepository:  servicesRepository,
+			logFunc:             logFunc,
 		},
-		{
-			Name:        "checkAvailability",
-			Description: "Check if a employee is available for a booking.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"service": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the service",
-					},
-					"employee": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the employee",
-					},
-					"date": map[string]interface{}{
-						"type":        "string",
-						"description": "The date to check, in the format YYYY-MM-DD",
-					},
-					"time": map[string]interface{}{
-						"type":        "string",
-						"description": "The time to check, in the format HH:MM",
-					},
-				},
-				"required": []interface{}{"employee", "service", "date", "time"},
-			},
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("checkAvailability called with args=%v ; contextVars=%v\n", args, contextVariables)
-				employeeArg, ok := args["employee"].(string)
-				if !ok || employeeArg == "" {
-					return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string"))
-				}
-				serviceArg, ok := args["service"].(string)
-				if !ok || serviceArg == "" {
-					return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string"))
-				}
-				employee, err := employeeRepository.GetEmployeeByName(employeeArg)
-				if err != nil || employee == nil {
-					return makeResult(nil, "employee not found", err)
-				}
-				service, err := servicesRepository.GetServiceByName(serviceArg)
-				if err != nil || service == nil {
-					return makeResult(nil, "service not found", err)
-				}
-
-				// TODO make sure the employee offers the service
-
-				date, ok := args["date"].(string)
-				if !ok {
-					return makeResult(nil, "invalid date argument", fmt.Errorf("date is not a string"))
-				}
-				time, ok := args["time"].(string)
-				if !ok {
-					return makeResult(nil, "invalid time argument", fmt.Errorf("time is not a string"))
-				}
-
-				debugPrintf("checking availability for employeeId: %d serviceId: %d date: %s time: %s",
-					employee.ID, service.ID, date, time)
-				available, err := employeeRepository.CheckAvailability(employee.ID, service.ID, date, time)
-				return makeResult(available, "Failed to check availability", err)
-			},
+		&checkAvailabilityTool{
+			employeesRepository: employeeRepository,
+			servicesRepository:  servicesRepository,
+			logFunc:             logFunc,
 		},
-		{
-			Name:        "bookAppointment",
-			Description: "Book an appointment with a employee for a specific service, date, and time.",
-			Parameters: map[string]interface{}{
-				"type": "object",
-				"properties": map[string]interface{}{
-					"service": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the service",
-					},
-					"employee": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the employee",
-					},
-					"date": map[string]interface{}{
-						"type":        "string",
-						"description": "The date to book at, in the format YYYY-MM-DD",
-					},
-					"time": map[string]interface{}{
-						"type":        "string",
-						"description": "The time to book at, in the format HH:MM",
-					},
-					"name": map[string]interface{}{
-						"type":        "string",
-						"description": "The name of the client",
-					},
-					"phone": map[string]interface{}{
-						"type":        "string",
-						"description": "The phone number of the client",
-					},
-				},
-				"required": []interface{}{"employee", "service", "date", "time", "name", "phone"},
-			},
-			Function: func(args map[string]interface{}, contextVariables map[string]interface{}) swarmgo.Result {
-				debugPrintf("bookAppointment called with args: %v ; %v\n", args, contextVariables)
-
-				employeeArg, ok := args["employee"].(string)
-				if !ok || employeeArg == "" {
-					return makeResult(nil, "invalid employee argument", fmt.Errorf("employee is not a string"))
-				}
-				serviceArg, ok := args["service"].(string)
-				if !ok || serviceArg == "" {
-					return makeResult(nil, "invalid service argument", fmt.Errorf("service is not a string"))
-				}
-				employee, err := employeeRepository.GetEmployeeByName(employeeArg)
-				if err != nil || employee == nil {
-					return makeResult(nil, "service not found", err)
-				}
-				service, err := servicesRepository.GetServiceByName(serviceArg)
-				if err != nil || service == nil {
-					return makeResult(nil, "service not found", err)
-				}
-
-				// TODO make sure the employee offers the service
-
-				date, ok := args["date"].(string)
-				if !ok {
-					return makeResult(nil, "invalid date argument", fmt.Errorf("date is not a string"))
-				}
-				bookingTime, ok := args["time"].(string)
-				if !ok {
-					return makeResult(nil, "invalid time argument", fmt.Errorf("time is not a string"))
-				}
-				name, ok := args["name"].(string)
-				if !ok || name == "" {
-					return makeResult(nil, "invalid name argument", fmt.Errorf("name is not a string"))
-				}
-				phone, ok := args["phone"].(string)
-				if !ok || phone == "" {
-					return makeResult(nil, "invalid phone argument", fmt.Errorf("phone is not a string"))
-				}
-
-				if ok, err := employeeRepository.CheckAvailability(employee.ID, service.ID, date, bookingTime); !ok || err != nil {
-					return makeResult(nil, "service is not available", err)
-				}
-
-				dateTime, err := time.Parse("2006-01-02 15:04", date+" "+bookingTime)
-				if err != nil {
-					return makeResult(nil, "invalid date and time", err)
-				}
-
-				debugPrintf("booking appointment for employeeId: %d serviceId: %d date: %s time: %s name: %s phone: %s",
-					employee.ID, service.ID, date, bookingTime, name, phone)
-
-				booking := repository.Booking{
-					ServiceID:       service.ID,
-					EmployeeID:      employee.ID,
-					BookingDateTime: dateTime,
-					CustomerName:    name,
-					CustomerPhone:   phone,
-				}
-
-				err = bookingsRepository.SaveBooking(&booking)
-				return makeResult("ok", "Failed to save booking", err)
-			},
+		&bookAppointmentTool{
+			employeesRepository: employeeRepository,
+			servicesRepository:  servicesRepository,
+			bookingsRepository:  bookingsRepository,
+			logFunc:             logFunc,
 		},
 	}
 }
