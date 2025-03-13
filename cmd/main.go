@@ -15,7 +15,7 @@ import (
 func main() {
 	err := godotenv.Load()
 	if err != nil {
-		log.Fatalf("Error loading .env file: %w", err)
+		log.Println("Error loading .env file: %w", err)
 	}
 
 	bookingsRepository := memory_repository.NewBookingsMemoryRepository()
@@ -59,6 +59,8 @@ func main() {
 			Price:    50,
 		},
 	})
+
+	// employees for a dental clinic
 	employeeRepository := memory_repository.NewEmployeeMemoryRepository(bookingsRepository, servicesRepository, map[uint]*repository.Employee{
 		1: {
 			ID:          1,
@@ -91,7 +93,6 @@ func main() {
 	agentTools := agent.GetAgentTools(bookingsRepository, servicesRepository, employeeRepository, debugMode)
 	agentFactory := agent.NewOpenaiAgentFactory(agentTools, debugMode)
 
-	fmt.Printf("%+v\n", os.Args)
 	if len(os.Args) > 1 && os.Args[1] == "cli" {
 		runCli(agentFactory)
 	} else {
